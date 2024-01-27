@@ -1,0 +1,77 @@
+use comments
+alias SolarSensor d0
+alias SolarPanel d1
+alias SolarOutputDisplay d2
+
+#alias LedVertical d2
+#alias LedHorizontal d3
+var SOLAR_HASH = d1.PrefabHash
+
+const vertical_correction_factor = 90
+const horizontal_correction_factor = 0
+
+var sun_horizontal = 0
+var sun_vertical = 0
+var vertical = 180
+var horizontal = 180
+
+main:
+    var sunIsShining = d0.Activate
+    # If the sun is not shining, don't bother moving panels around.
+    if sunIsShining == 1    
+        #updateLED()
+        getSunPosition()
+        setSolarPanels()
+    end
+    calculateOutput()
+    yield
+j main
+
+function getSunPosition
+    # Get sun position from sensor.
+    sun_horizontal = d0.Horizontal
+    sun_vertical = d0.Vertical
+    # Set ideal solar position.
+    horizontal = sun_horizontal
+
+    # Add Horizontal Correction Factor
+    horizontal = sun_horizontal + horizontal_correction_factor
+    # Add Vertical Correction Factor
+    vertical = sun_vertical + vertical_correction_factor
+
+    # Wrap vertical value around.
+    if vertical < 0
+        vertical = 360 + vertical
+    end
+    if vertical >= 360
+        vertical = vertical - 360
+    end
+    # Wrap horizontal value around.
+    if horizontal < 0
+        horizontal = 360 + horizontal
+    end
+    if horizontal >= 360
+        horizontal = horizontal - 360
+    end
+end
+
+function setSolarPanels
+    d(SOLAR_HASH).Vertical = vertical
+    d(SOLAR_HASH).Horizontal = horizontal
+end
+
+function updateLED
+    d2.Setting = vertical
+    d3.Setting = horizontal
+end
+
+function calculateOutput
+    # Sum the output from all panels.
+    var output = d(SOLAR_HASH).Charge(Sum)
+    # Get average efficiency. 
+    # var output = d(SOLAR_HASH).Ratio(Average)
+    # Set the LCD value to the total output.
+    d2.Setting = output
+
+
+end

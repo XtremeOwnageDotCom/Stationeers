@@ -1,0 +1,91 @@
+# This script will turn off filtration units, if there is not suitable gas present in the input sensor.
+define filtration -348054045
+define liquid_pipe_analzyer -2113838091
+define liquid_pipe_heater -287495560
+define kelvin_offset 273.15 
+
+alias sensor d0         # Filtration Input Sensor.
+
+# Liquid Management
+alias min_temp r2
+alias temp r3
+
+# Gas Management
+alias target_hash r0
+alias target_device_output_pressure r5
+alias gas_present r6
+alias output_pressure r7
+alias output_pressure_good r8
+
+alias scratch r13
+alias scratch_2 r14
+alias scratch_3 r15
+
+
+main:   
+    # Check C02
+    l scratch sensor RatioCarbonDioxide
+    move target_hash HASH("CO2 Filter")
+    jal filtration_logic
+
+
+    # Check Oxygen
+    l scratch sensor RatioOxygen
+    move target_hash HASH("Oxygen Filter")
+    jal filtration_logic
+
+    # Check Nitrogen
+    l scratch sensor RatioNitrogen
+    move target_hash HASH("Nitrogen Filter")
+    jal filtration_logic
+
+    # Check Hydrogen
+    l scratch sensor RatioVolatiles
+    move target_hash HASH("Hydrogen Filter")
+    jal filtration_logic
+
+    # Check N20
+    l scratch sensor RatioNitrousOxide
+    move target_hash HASH("Nitrous Filter")
+    jal filtration_logic
+
+    # Check Pollutants
+    l scratch sensor RatioPollutant
+    move target_hash HASH("Pollutants Filter")
+    jal filtration_logic
+
+    # Check Water
+    l scratch sensor RatioWater
+    move target_hash HASH("Water Filter")
+    jal filtration_logic
+
+    # Check Liquid Nitrous Oxide
+    move target_hash HASH("Liquid Nitrous")
+    move min_temp 0
+    jal liquid_logic
+
+    # Check Liquid Pollutants
+    move target_hash HASH("Liquid X")
+    move min_temp 0
+    jal liquid_logic
+
+    yield
+    j main
+
+liquid_logic:
+    lbn temp liquid_pipe_analzyer target_hash Temperature Minimum
+    sub temp temp kelvin_offset                    # Convert K to C.
+    slt scratch temp min_temp                      # Scatch = temp < min_temp
+    sbn liquid_pipe_heater target_hash On scratch   # If we are below min temp, turn heater on.
+    j ra
+
+filtration_logic:
+    sgt gas_present scratch 0.0001
+
+    lbn output_pressure filtration target_hash PressureOutput Maximum
+    slt output_pressure_good output_pressure 40000
+
+    and scratch gas_present output_pressure_good    # Only turn the unit on if both output pressure is reasonable, and there is gas present to be filtered.
+
+    sbn filtration target_hash On scratch
+    j ra

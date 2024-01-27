@@ -1,0 +1,40 @@
+use comments
+
+
+var current_temp = 0
+var current_press = 0
+
+start:
+    populateVariables()
+
+    # Ensure we are at a safe temp level.
+    if current_press > max_pressure
+        # Yeet exhaust out the stack.
+        exhaust_stack.On = 1
+    else
+        exhaust_stack.On = 0
+    end
+
+    # If we are above a minimum set-point, we need to bleed pressure when possible.
+    if current_press > min_pressure
+        # Once the gasses have cooled enough, return them to the waste loop.
+        if current_temp <= 100
+            return_to_base.On = 1
+        end
+    else
+        # Disable return pump
+        return_to_base.On = 0
+    end
+    yield
+j start
+
+
+function populateVariables
+    # Returned value is in Kelvin. 
+    var current_temp_k = analyzer.Temperature
+    # Convert to C
+    current_temp = current_temp_k - 273.15
+    # Pressure measured in kPA
+    current_press = analyzer.Pressure
+end
+

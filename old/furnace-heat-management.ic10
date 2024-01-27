@@ -1,0 +1,102 @@
+alias d_min_temp d0
+alias d_max_temp d1
+alias d_min_pressure d2
+alias d_max_pressure d3
+alias d_furnace_on d4
+alias furnace d5
+define Kp_temp 0.01                                                      # Proportional gain for temperature
+define Ki_temp 0.08                                                     # Integral gain for temperature
+define Kd_temp 0.08                                                     # Derivative gain for temperature
+define output_lighting -2
+define output_emptying -3
+define output_stopping -4
+define output_running -5
+alias min_temp r0
+alias max_temp r1
+alias min_pressure r2
+alias max_pressure r3
+alias temp r4
+alias press r5
+alias current_input_setting r6
+alias current_output_setting r7
+alias integral_temp r8
+alias prev_error_temp r9
+alias output r15                                                        # Output Value
+main_loop:   
+    yield                                                           # Main processing loop
+    move output 0                                                       # Clear display value
+    alias furnace_on r13                            
+    jal populateVariables                                               # Populate Variables   
+    l furnace_on d_furnace_on Setting                                   # Determine is the on switch is turned on.    
+    beq furnace_on 0 furnace_shutdown                                   # if(furnace.on == 0) goto main_loop_stop_furnace    
+    move output output_running                              
+    s furnace On 1                                                      # Turn furnace on.
+    blt temp 300 light_furnace                                          # If temp < 300, run light furnace routine.
+    blt press 1000 light_furnace                                        # If pressure < 5000, run light furnace routine.
+    blt press max_pressure set_furnace_values                           # If we are under max pressure, go set furnace values.                        
+        add current_output_setting current_output_setting 1             # Overpressure - Slowly open the output valve.  
+        move output -50
+        s furnace SettingOutput current_output_setting      
+        s furnace SettingInput 0                                        # Turn off input fuel.
+    main_loop_finished:       
+        s db Setting temp
+        #s db Setting output                                              # Set display value.
+    j main_loop
+populateVariables:                                                       # Populates the current registers
+    l min_temp d0 Setting
+    l max_temp d1 Setting
+    l min_pressure d2 Setting
+    l max_pressure d3 Setting
+    l press furnace Pressure
+    l current_input_setting furnace SettingInput
+    l current_output_setting furnace SettingOutput
+    l r10 furnace Temperature                                             # Get Temp (In Kelvin) from Furnace
+    sub temp r10 273.15                                                   # Convert to C.    
+    bgt temp 0 ra                                                         # If the returned temp value is greater than zero- return to sender.    
+    move temp -1                                                          # Otherwise- set the current temp as -1
+    j ra
+furnace_shutdown:                                                         # Furnace Shutdown Routine
+    move r10 10
+    s furnace SettingOutput 100                                            # Blow everything out the exhuaust.
+    s furnace SettingInput 0                                               # Turn off input fuel.
+    move output output_emptying                                            # Set the output value.
+    bgtz press main_loop_finished                                          # If pressure is greater then zero- nothing to do.
+    l r13 furnace On                                                       # Turns the furnace off, if it was on.
+    move output -1                                                         # Set output value
+    beq r13 0 ra                                                           # If furnace.On == 0, return to sender. Furance is off.
+    s furnace On 0                                                         # Turn the furnace off
+    j main_loop_finished                                                   # Return to Sender
+light_furnace:                                                             # Light the Furnace 
+    bgt press 1000 light_furnace_1                                         # If the furnace is completely empty- there will not be any pressure / temp.
+        s furnace SettingInput 1                                           # There is no gas in the furnace. Open the input valve
+    light_furnace_1:                                                       # If the furnace is too cold, it must not be lit. Light it.    
+    l r13 furnace Combustion                                               # Determine if the furnace is "Lit"
+    s furnace SettingOutput 0                                              # Close the output valve too.
+    beq r13 1 main_loop_finished                                           # If there is already fire, no sense in lighting it again.
+    s furnace Activate 1                                                   # Click the lighter.  
+    move output output_lighting
+    j main_loop_finished
+set_furnace_values:                                                        # r10 = error_temp, r11 = derivative_temp, r12 = control_signal_temp, r13 = scratch
+        sub r10 min_temp temp                                               # var error_temp = min_temp - temp
+        add integral_temp integral_temp r10
+        sub r11 r10 prev_error_temp                                         # var derivative_temp = error_temp - prev_error_temp
+        move prev_error_temp r10                                            # prev_error_temp = error_temp
+        mul r12 r10 Kp_temp                                                 # control_signal_temp = error_temp * Kp_temp        
+        mul r13 integral_temp Ki_temp                                       # scratch = integral_temp * Ki_temp        
+        add r12 r12 r13                                                     # control_signal_temp = control_signal_temp + scratch
+        mul r13 r11 Kd_temp                                                 # scratch = Kd_temp * derivative_temp
+        add r12 r12 r13
+        add r13 r12 current_input_setting                                   # Store new_input_setting in scratch
+    
+        blt r13 0 set_furnace_values_check_input_bounds_toolow              # if new_input_setting < 0 goto set_furnace_values_check_input_bounds_toolow
+        blt r13 100 set_furnace_values_set                                  # if new_input_setting <= 100 goto set_furnace_values_set
+        set_furnace_values_check_input_bounds_toohigh:
+            move r13 100
+            j set_furnace_values_set
+        set_furnace_values_check_input_bounds_toolow:
+            move r13 0
+    set_furnace_values_set:                                                  # Set the furnace input value
+        s furnace SettingInput r13
+        s furnace SettingOutput 0                                            # Close the output valve
+        move output r13                                                      # Write current output setting to be displayed.
+    j main_loop_finished

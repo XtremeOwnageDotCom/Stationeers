@@ -1,0 +1,61 @@
+define DesiredPressure 40000
+define kelvin_offset 273.15 
+define max_waste_temp 273.15
+
+# Aliases
+alias sensor d0                             # Sensor on WASTE network. 
+alias target d1                             # Powered Vent / Active Vent / etc. Sucks in outside air.
+alias waste_fill_valve d2                   # Valve to fill waste network.
+alias waste_cool_valve d3                   # Waste network cooling valve. (This air will cool the waste, and be expelled)
+alias waste_exchanger_pump d4               # Pump to circule waste air through exchanger/
+alias analyzer d5                           # Pipe analzyer to allow watching pressure... Don't want to over-pressure.
+
+alias waste_pressure r0                     # Waste network pressure.
+alias waste_temp r1                        # Waste network temperature
+
+alias output_pressure r2                    # Output pressure from input vent / target.
+alias output_pressure_good r3               # Make sure we don't over-pressure the input lines.
+alias output_temp r4                        # Output temp of air from vent.
+
+alias low_pressure r5                       # Waste network is low on pressure.
+alias high_temp r6                          # Waste network is over temp.
+alias enable_pump r7                        # Should target / input vent be turned on?
+
+alias scatch_2 r14
+alias scatch r15
+
+
+Loop:
+    yield
+   
+    jal Check_Output_Pressure               # Manage input air pressure.
+    jal Check_Cooling_Conditions            # Manage temp in waste network.
+    jal Check_Waste_Pressure                # Add pressure to waste network, if low.
+
+    or enable_pump low_pressure high_temp       # If either pressure is low, or temp is high, turn on the input pump.
+    and enable_pump output_pressure_good enable_pump    # Check output pressure.
+    s target On enable_pump
+    s target Mode 1                             # Inward
+    j Loop
+
+Check_Cooling_Conditions:  
+    # In order to cool the waste air, we need to make sure the OUTSIDE air, is cooler then the air we want to cool.
+    l waste_temp sensor Temperature             # This is the temp of the waste network.
+    l output_temp d5 Temperature                # Temperature of incoming air.
+    slt scatch output_temp waste_temp           # scatch = output_temp < waste_temp.
+    sgt high_temp waste_temp max_waste_temp     # high_temp = waste_temp > max_waste_temp
+    and high_temp high_temp scatch              # Make sure that both the cooling air is cooler then the waste air, AND, we are over temp.
+    s waste_cool_valve On high_temp             # if temp is high, blow it through the cooler.
+    s waste_exchanger_pump On high_temp         # We need to move gasses through the exchanger to cool them down.
+    j ra
+
+Check_Output_Pressure:                          # Make sure we don't over-pressure the input pipe.
+    l output_pressure d5 Pressure            # Get the pressure for the input pipe.
+    slt output_pressure_good output_pressure 40000
+    j ra
+
+Check_Waste_Pressure:
+    l waste_pressure sensor Pressure         # Load the current setting. Update this with your source sensor.   
+    slt low_pressure waste_pressure DesiredPressure  # enable_pump = pressure < DesiredPressure
+    s waste_fill_valve On low_pressure          # if pressure is low, open the fill valve.
+    j ra

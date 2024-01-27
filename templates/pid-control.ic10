@@ -1,0 +1,85 @@
+define SetPoint 100
+
+# PID Constants
+define Kp 1.5 #Aprox MaxOutput/SP
+define Ti 0
+define Td 0.1
+
+define TimeStep 1.0
+
+# Constraints
+define MinOutput 0
+define MaxOutput 10
+define FilterTicks 3 
+define RegulatorMode -1                 # Direct = 1, Reverse = -1
+define setpoint_multiplier 10           # If a device feeds the setpoint, the provided value will be multiplied by this.
+
+# Aliases
+alias sensor d0
+alias target d1
+alias setpoint_device d2
+
+alias input_value r0
+alias output_value r1
+alias error r2
+alias prev_error r3
+alias iCalc r4
+alias dCalc r5
+
+alias setpoint r8
+alias TempValue r10
+
+alias scratch r15
+# Init Values
+move setpoint SetPoint
+move iCalc 0
+
+Loop:
+    yield
+    jal populate_registers                      # Load registers
+    bdseal setpoint_device load_setpoint        # Load Setpoint, if device is populated.
+    Calculate:
+        sub error input_value setpoint
+        mul error error RegulatorMode
+    Proportional:
+        mul output_value Kp error         
+    Integrator:                                 # Calculate the integral value.
+        beqz Ti Derivative
+        div TempValue output_value Ti
+        add iCalc iCalc TempValue
+        add output_value output_value iCalc
+    Derivative:                                 # Calculate the Derivative value.
+        sub dCalc error prev_error
+        div dCalc dCalc TimeStep
+        # mul dCalc dCalc Kp
+        mul dCalc dCalc Td
+        move prev_error error
+        add output_value output_value dCalc
+    Limits:                                     # Keeps output value within defined min / max values.
+        min iCalc MaxOutput iCalc
+        max iCalc MinOutput iCalc
+        min output_value MaxOutput output_value
+        max output_value MinOutput output_value
+    SetState:
+        s db Setting output_value
+        bdseal target update_device
+    j Loop
+
+
+populate_registers:                             # Load data into registers.
+    l input_value sensor Pressure                # Load the current setting. Update this with your source sensor.
+    j ra
+
+load_setpoint:                                  # Loads setpoint from configured device.
+    l setpoint setpoint_device Setting
+    mul setpoint setpoint setpoint_multiplier
+    move iCalc 0
+    j ra
+
+update_device:
+    s target Setting output_value              # Update the target device. Update this to compensate for your device.
+    sgt scratch output_value 0                 # If output value > 0, store 1
+    #s target On scratch
+
+    j ra
+

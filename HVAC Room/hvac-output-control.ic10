@@ -1,0 +1,77 @@
+define led_small -815193061
+define output_led_hash HASH("Output Pump Setting")
+define SetPoint 100
+
+# PID Constants
+define Kp 0.2 #Aprox MaxOutput/SP
+define Ti 0
+define Td 0
+
+define TimeStep 1.0
+
+# Constraints
+define MinOutput 0
+define MaxOutput 100
+define FilterTicks 3
+define RegulatorMode -1                 # Direct = 1, Reverse = -1
+define setpoint_multiplier 10           # If a device feeds the setpoint, the provided value will be multiplied by this.
+
+# Aliases
+alias sensor d0
+alias target d1
+alias setpoint_device d2
+
+alias input_value r0
+alias output_value r1
+alias error r2
+alias prev_error r3
+alias integral_calc r4
+alias derivative_calc r5
+
+alias setpoint r8
+alias scratch r15
+
+# Init Values
+move setpoint SetPoint
+move integral_calc 0
+
+Loop:
+    yield
+    l input_value sensor Pressure                # Load the current setting. Update this with your source sensor.
+    bdseal setpoint_device load_setpoint        # Load Setpoint, if device is populated.
+    Calculate:
+        sub error input_value setpoint
+        mul error error RegulatorMode
+    Proportional:
+        mul output_value Kp error
+    Integrator:                                 # Calculate the integral value.
+        beqz Ti Derivative
+        add integral_calc integral_calc error
+        add output_value output_value integral_calc
+    Derivative:                                 # Calculate the Derivative value.
+        beqz Td Limits                          # If Td is zero, skip Derivative calculation.
+        sub derivative_calc error prev_error            
+        move prev_error error
+        add output_value output_value derivative_calc
+    Limits:                                     # Keeps output value within defined min / max values.
+        min output_value MaxOutput output_value
+        max output_value MinOutput output_value
+    SetState:
+        s db Setting output_value
+        sbn led_small output_led_hash Setting output_value
+        bdseal target update_device
+    j Loop
+
+
+load_setpoint:                                  # Loads setpoint from configured device.
+    l setpoint setpoint_device Setting
+    mul setpoint setpoint setpoint_multiplier
+    # move iCalc 0
+    j ra
+
+update_device:
+    s target Setting output_value              # Update the target device. Update this to compensate for your device.
+    sgt scratch output_value 0                 # If output value > 0, store 1
+    #s target On scratch
+
+    j ra

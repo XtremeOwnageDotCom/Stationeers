@@ -1,0 +1,79 @@
+
+alias return_to_base d0
+alias exhaust_stack d1
+alias waste_analyzer d2
+alias coolant_analyzer d4
+alias furnace d5
+
+define PoweredVent 938836756
+define digital_valve -1280984102
+define safe_temp 100
+define desired_coolant_pressure 40000
+define max_pressure 50000
+
+alias current_temp r0
+alias current_press r1
+alias coolant_press r2
+alias coolant_pressure_low r3                                # Amount of consumers needing external air flow.
+alias too_hot r4
+
+alias scratch r13
+alias scratch_2 r14
+alias scratch_3 r15
+
+sbn PoweredVent HASH("Coolant Input Vent") Mode 1                           # Set to pull air inwards.
+sbn PoweredVent HASH("Coolant Input Vent") PressureExternal 0               # Set max external pressure for input vent.
+start:
+    yield
+    jal populateVariables                                                   # Populate Registers    
+    jal toggle_coolant_fan                                                  # Toggle the input fan on/off as needed.
+    jal set_furnace_output_led      
+    jal toggle_coolant_purge_valve                                          # Toggle the purge valve if needed.   
+     
+    s db Setting coolant_press          
+    sgt scratch current_press max_pressure                                  # Store a value which indicates if we are over pressure
+    s exhaust_stack On scratch                                              # If we are over pressure, yeet the hot gasses out the exhaust stack.
+
+    slt scratch_3 current_temp safe_temp                                    # Is the temp cool enough?
+    sgt scratch_2 current_press 1000                                        # Is there waste gasses still needing to be exhausted?
+    and scratch scratch_2 scratch_3                                         # If- gasses are cool, and there are gasses, exhaust them.
+    s return_to_base On scratch                                             # If gasses have cooled down, return gasses to base loop.
+    
+    sbn digital_valve HASH("Coolant Input Valve") On coolant_pressure_low   # If coolant pressure is low, fill it up.  
+
+    j start
+
+toggle_coolant_fan:
+    or scratch coolant_pressure_low too_hot                                 # If we are too hot, we need to run the fan.
+    sbn PoweredVent HASH("Coolant Input Vent") On scratch     
+    j ra
+
+populateVariables:
+    l scratch waste_analyzer Temperature                                    # Returned value is in Kelvin.
+    sub current_temp scratch 273.15                                         # Convert to C
+    l current_press waste_analyzer Pressure                                 # Pressure measured in kPA
+    l coolant_press coolant_analyzer Pressure                               # Get coolant pressure
+    slt coolant_pressure_low coolant_press desired_coolant_pressure         # Store value if coolant pressure is low.
+    sgt too_hot current_temp safe_temp                                     # Store a value which indicates if the current temp is too hot.
+    j ra
+
+set_furnace_output_led:
+    define led -815193061
+    #define Furnace 545937711
+    ls r15 furnace 0 Quantity                                               # Get Input Quantity of Furnace
+    sbn led HASH("output") Setting r15                                      # Output the furnace's remaining input to the LED.             
+    j ra
+
+
+toggle_coolant_purge_valve:
+    beq coolant_pressure_low 1 purge_off                                    # If coolant pressure is low, leave purge valve off.
+    beq too_hot 0 purge_off                                                 # If we aren't too hot, don't open the purge.
+    sbn digital_valve HASH("Coolant Purge") On 1                      # Turn the purge on.
+    j ra
+    purge_off:
+        sbn digital_valve HASH("Coolant Purge") On 0
+        j ra
+
+        
+
+    

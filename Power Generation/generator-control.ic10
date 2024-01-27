@@ -1,0 +1,94 @@
+define large_battery -1388288459
+define solid_fuel_generator 813146305
+define gas_generator 1165997963
+define led_small -815193061
+define led_medium -53151617
+define led_large -1949054743
+define gas_sensor -1252983604
+define cable_analyzer 1036015121
+
+define name_energy_in HASH("Generation")
+define name_energy_out HASH("Output")
+
+define gas_gen_max_temp 22
+define kelvin_offset 273.15 
+
+alias GeneratorRunning d0
+
+alias current_charge_pct r1
+alias current_temp r2
+alias temp_good r3
+alias energy_in r4
+alias energy_out r5
+alias net_energy r6
+
+alias current_charge r10
+alias maxiumum_charge r11
+
+alias scratch r14
+alias scratch_2 r15
+
+# Main processing loop
+main:
+    # Call functions to get charge, calculate mode, and set generator state
+    jal populate_registers
+    jal setGeneratorState
+    bdseal GeneratorRunning toggle_generator_indicator       # If an indicator is configured, manage it.
+    div scratch current_charge_pct 100                           # LEDs require a decimal point. Whole number displays weird.
+    sbn led_medium HASH("Percentage") Setting scratch        # Set LED to show current charge percentage.
+    sbn led_medium HASH("Percentage") Mode 1                 # Show Percentage
+    sbn led_large HASH("Energy Usage") Setting net_energy
+    sbn led_large HASH("Energy Usage") Mode 2              # Show Power
+    yield
+    j main
+
+
+populate_registers:                                       # Function to get the charge level 
+    lb current_charge large_battery Charge Sum
+    lb maxiumum_charge large_battery Maximum Sum
+
+    div scratch current_charge maxiumum_charge
+    mul current_charge_pct scratch 100
+
+
+    lb scratch_2 gas_sensor Temperature Average  # Get the average temp (in Kelvin)
+    sub current_temp scratch_2 kelvin_offset     # Convert to C
+    slt temp_good current_temp gas_gen_max_temp  # Set a variable which indicates if its cool enough to run the gas generator.
+    lbn energy_in cable_analyzer name_energy_in PowerActual Sum
+    lbn energy_out cable_analyzer name_energy_out PowerActual Sum
+    sub net_energy energy_in energy_out
+    j ra                                         # Return to the calling function
+
+toggle_generator_indicator:
+    lb scratch solid_fuel_generator On Maximum
+    s GeneratorRunning On scratch
+    j ra
+
+setGeneratorState:                               # Function to set the generator state based on the calculated mode
+    bgt current_charge_pct 90 gt_90                  # > 90
+    bgt current_charge_pct 50 gt_50                  # > 50
+    bgt current_charge_pct 20 gt_20                  # > 20
+    bgt current_charge_pct 10 gt_10                  # > 10
+
+    sb solid_fuel_generator On 1                 # Start the solid generator. Battery is low.
+    sb gas_generator On temp_good                # If the temp is good, run the gas generator.
+    j ra
+
+gt_10:
+    sb gas_generator On temp_good                # If the temp is good, run the gas generator.
+    j ra
+
+gt_20:
+    sb solid_fuel_generator On 0
+    sb gas_generator On temp_good                # If the temp is good, run the gas generator.
+    j ra
+
+gt_50:
+    sb solid_fuel_generator On 0
+    sb gas_generator On 0
+    j ra
+
+gt_90:
+    sb solid_fuel_generator On 0
+    sb gas_generator On 0
+    j ra

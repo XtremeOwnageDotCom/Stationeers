@@ -1,0 +1,68 @@
+l r0 d0 PrefabHash
+move r1 0
+move r2 0
+# Main processing loop
+main:
+jal getCharge
+jal calculateMode
+jal setGeneratorState
+# Set LED Value
+s d3 Setting r2
+yield
+j main
+jr 64
+getCharge:
+# Get average ratio from batteries. Returns value of 0 - 1.
+lb r3 r0 Ratio Average
+# Take the float, times 100 to give a current percentage.
+mul r2 r3 100
+j ra
+calculateMode:
+slt r15 r2 10
+beqz r15 if0else
+move r1 0
+j if0exit
+if0else:
+slt r14 r2 20
+beqz r14 if1else
+move r1 1
+j if1exit
+if1else:
+slt r13 r2 50
+beqz r13 if2else
+move r1 2
+j if2exit
+if2else:
+move r1 3
+if2exit:
+if1exit:
+if0exit:
+# Set housing's value to the current running mode.
+s db Setting r1
+j ra
+setGeneratorState:
+# 0 to 10%
+seqz r15 r1
+beqz r15 if3exit
+s d2 On 1
+# GasGenerator.On = 1
+if3exit:
+# 10 to 20%
+seq r15 r1 1
+beqz r15 if4exit
+# CoalGenerator.On = 1
+# GasGenerator.On = 1
+if4exit:
+# 20 to 50%
+seq r15 r1 2
+beqz r15 if5exit
+s d2 On 0
+# GasGenerator.On = 1
+if5exit:
+# > 50%
+seq r15 r1 3
+beqz r15 if6exit
+s d2 On 0
+s d1 On 0
+if6exit:
+j ra

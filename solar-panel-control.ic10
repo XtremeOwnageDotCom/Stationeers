@@ -1,0 +1,54 @@
+define solar_panel_heavy -1545574413
+alias daylight_sensor d0
+
+define vertical_correction_factor 90
+define horizontal_correction_factor 90
+
+define degrees_min 0
+define degrees_max 360
+
+alias sun_horizontal r1
+alias sun_vertical r2
+alias vertical r3
+alias horizontal r4
+alias sunshine r5
+alias current_charge r6
+
+main:
+    yield
+    jal set_registers
+    #beq sunshine 0 main                                           # If the sun isn't shining. Don't do anything.
+
+    add horizontal sun_horizontal horizontal_correction_factor     # Correct for horizontal
+    add vertical sun_vertical vertical_correction_factor           # Correct for vertical
+
+    jal rollover_value                                               # Rollover the values if needed.
+    # Set north facing panels.
+    sb solar_panel_heavy Vertical vertical              # Set panel vertical
+    sb solar_panel_heavy Horizontal horizontal          # Set panel horizontal
+
+    jal set_display_value                                           # Set the debug output
+    j main
+
+set_registers:
+    l sun_horizontal daylight_sensor Horizontal
+    l sun_vertical daylight_sensor Vertical
+    l sunshine daylight_sensor Activate                             # Is the sun shining?
+    j ra                                                            # Return to sender
+
+rollover_value:             
+    brgt vertical degrees_min 2                                     # If value is greater then zero, skip next instruction.
+    add vertical vertical degrees_max                               # Add 360 to the value. It should now be positive.
+    brlt vertical degrees_max 2                                     # If the value is less then 360, skip the next instruction.
+    sub vertical vertical degrees_max                               # Subtract 360 from the vertical value.
+
+    brgt horizontal degrees_min 2                                   # If value is greater then zero, skip next instruction.
+    add horizontal horizontal degrees_max                           # Add 360 to the value. It should now be positive.
+    brlt horizontal degrees_max 2                                   # If the value is less then 360, skip the next instruction.
+    sub horizontal horizontal degrees_max                           # Subtract 360 from the vertical value.
+    j ra                                                            # Return to sender.
+
+set_display_value:
+    lb current_charge solar_panel_heavy Charge Sum
+    s db Setting current_charge
+    j ra

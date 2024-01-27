@@ -1,0 +1,59 @@
+define target_input_pressure 1000
+define lever 1220484876
+define liquid_pipe_analyzer -2113838091
+define active_drain 1687692899
+
+alias gas_sensor d0
+alias ac_input_vent d1
+alias air_conditioner d2
+alias analyzer d3
+alias input_vent d4
+
+alias input_pressure r0
+alias input_pressure_good r1
+alias fresh_air r2
+alias force_vent r3
+alias dump_liquid r4    
+alias room_pressure_safe r5
+alias enable_dump r6
+
+loop:
+    yield
+    lbn fresh_air lever HASH("FreshAir") Setting Maximum
+    lbn force_vent lever HASH("Vent") Setting Maximum
+
+    beq force_vent 1 vent_all_air
+    jal manage_liquid
+    jal manage_cooling_input_vent
+
+
+
+
+    s input_vent Mode 0     
+    s input_vent PressureExternal 100
+    s input_vent On fresh_air
+j loop
+
+manage_cooling_input_vent:  # We ONLY want to add to the cooling loop, when the ratio of oxygen > 95 percent. Other gasses freeze too easily.
+    s ac_input_vent Mode 1
+    s ac_input_vent PressureInternal 38000
+    s ac_input_vent On input_pressure_good
+    j ra
+
+
+manage_liquid:
+    l room_pressure_safe d0 Pressure 
+    slt room_pressure_safe room_pressure_safe 120
+
+    lbn dump_liquid lever HASH("DumpLiquid") Setting Maximum
+    and enable_dump dump_liquid room_pressure_safe
+    sb active_drain On enable_dump          # Only dump liquid if both the switch is on, and the room pressure is safe.
+    j ra
+
+vent_all_air:               # Sucks all air out of the cooling chamber.
+    s ac_input_vent On 0    # Turn AC Input Vent OFF.
+    sb active_drain On 0    # Turn the liquid drains OFF.
+
+    s input_vent Mode 1     # Suck air OUT
+    s input_vent On 1       # Turn input vent on.
+    j loop

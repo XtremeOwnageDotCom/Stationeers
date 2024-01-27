@@ -1,0 +1,16 @@
+# If anyone is detected in the room, it turns the lights on.
+# Thats it.
+
+define occupancy_sensor 322782515
+define wall_light -1860064656
+
+alias person_detected r0
+
+main:
+    lb person_detected occupancy_sensor Activate Sum    # Determine if anyone is in the room
+    sb wall_light On scratch
+
+
+
+    yield
+j main

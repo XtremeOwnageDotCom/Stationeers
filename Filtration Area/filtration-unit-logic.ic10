@@ -1,0 +1,82 @@
+# Intended for individual filtration units.
+
+# Monitors output pressure, and will idle unit to prevent over pressure scenarios.
+# Monitors tank pressure. If tank is over pressure, will set unit to idle.
+# Monitors input pressure. Will set unit to idle if input pressure is too low.
+
+define kelvin_offset 273.15 
+define max_pressure_output 48000                            # Filtration unit will stop if output pressure exceeds this.
+define min_pressure_input 5000                              # Filtration will only run if the min input pressure >= this number
+define output_pump_min_pressure 1000                        # Min output pressure before output pump kicks on.
+
+alias output_pump d0                                        # Auxillary output pump
+alias output_tank d1                                        # Output Tank Sensor
+
+alias output_pressure r1
+alias input_pressure r2
+alias output_pressure_good r3
+alias input_pressure_good r4
+alias filters_good r5
+alias output_tank_good r6
+
+alias should_run r7
+alias input_ok r8
+
+alias scratch r13
+alias scratch_2 r14
+alias scratch_3 r15
+
+
+init_registers:
+    move output_tank_good 1
+    j main
+
+check_input:                                                # This needs to be adjsuted on a filter by filter basis.
+    l scratch db RatioCarbonDioxideInput
+    sgtz input_ok scratch
+    j al
+main:   
+    yield                                        
+    jal load_registers                                      # Collect local data, and write to registers.
+    jal check_input
+    jal check_filters                                       # Check the status of the filters.
+    bdseal output_tank check_tank                           # Check tank pressure
+    jal calculate_logic                                     # Determine if the pump should be running.
+
+    s db Mode should_run                                    # Mode, Active = 1, Idle = 0    
+    bdseal output_pump toggle_output_pump                   # Toggle output pump, if specified.
+
+    j main
+
+load_registers:
+    l output_pressure db PressureOutput    
+    l input_pressure db PressureInput  
+    slt output_pressure_good output_pressure max_pressure_output    
+    sgt input_pressure_good input_pressure min_pressure_input
+    j ra
+
+toggle_output_pump:
+    sgt scratch output_pressure output_pump_min_pressure
+    s output_pump On scratch
+    j ra
+
+check_filters:
+    ls scratch_2 db 0 Quantity
+    ls scratch_3 db 1 Quantity
+    add scratch scratch_2 scratch_3
+    sgtz filters_good scratch
+    j ra
+
+check_tank:
+    l scratch output_tank Pressure                          # Get pressure from tank.
+    slt output_tank_good scratch max_pressure_output    # output_tank_good = output_tank < max_pressure_output
+    j ra
+
+calculate_logic:
+    # should_run = output_pressure_good && input_pressure_good && output_tank_good
+    and should_run output_pressure_good input_pressure_good 
+    and should_run should_run filters_good
+    and should_run should_run output_tank_good
+    j ra
+
+

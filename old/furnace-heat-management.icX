@@ -1,0 +1,207 @@
+use comments
+alias d_min_temp d0
+alias d_max_temp d1
+alias d_min_pressure d2
+alias d_max_pressure d3
+alias d_furnace_on d4
+alias furnace d5
+
+# Constants
+const danger_pressure = 50000
+const kelvin_offset = 273.15
+const temp_too_low = 150
+
+# PID Control Loop
+const Kp_temp = 0.1  # Proportional gain for temperature
+const Ki_temp = 0.08  # Integral gain for temperature
+const Kd_temp = 0.01  # Derivative gain for temperature
+
+# Values we have to stay in
+var min_temp = 0
+var max_temp = 0
+var min_pressure = 0
+var max_pressure = 0
+
+# Temp / Pressure
+var temp = 0
+var press = 0
+
+# Current Settings
+var current_input_setting = 0
+var current_output_setting = 0
+
+# PID Variables
+var integral_temp = 0
+var prev_error_temp = 0
+
+# Temp / Scratch Variables
+var float_val = 0
+var float_val_2 = 0
+var bool_val = 1
+
+
+start:
+    populateVariables()
+    # Determine is the on switch is turned on.
+    bool_val = d_furnace_on.Setting
+    if bool_val == 0
+        furnace_shutdown()
+    else
+        # Ensure the furnace is lit.
+        ensure_furnace_on()
+        if temp < temp_too_low
+            light_furnace()
+        else
+            set_furnace_values()
+        end
+        check_overpressure()
+        #set_display()
+    end
+   
+    yield
+j start
+
+function set_display
+    #value = furnace.SettingInput
+
+    # Display current input setting for debugging purposes.
+    #db.Setting = value
+end
+
+function ensure_furnace_on
+    bool_val = furnace.On
+    if bool_val == 0
+        furnace.On = 1
+    end
+end
+
+function ensure_furnace_off
+    bool_val = furnace.On
+    if bool_val == 1
+        furnace.On = 0
+    end
+end
+
+function populateVariables
+    # Fetch current settings from memory chips
+    min_temp = d_min_temp.Setting
+    max_temp = d_max_temp.Setting
+    min_pressure = d_min_pressure.Setting
+    max_pressure = d_max_pressure.Setting
+    press = furnace.Pressure
+    current_input_setting = furnace.SettingInput
+    current_output_setting = furnace.SettingOutput
+
+    # Returned value is in Kelvin
+    float_val = furnace.Temperature
+    
+    # Convert to C.
+    temp = float_val - kelvin_offset
+
+    # If there is no current temp... we will get very unusual values here.
+    if temp < 0
+        temp = -1
+    end
+end
+
+function furnace_shutdown
+    if current_output_setting < 100
+        # Blow everything out the exhuaust.
+        furnace.SettingOutput = 100
+    end
+
+    if current_input_setting > 0
+        # Turn off input fuel.
+        furnace.SettingInput = 0
+    end
+
+    if press > 0
+        # Wait for furnace to empty.
+    else
+        # Turn the furnace off.
+        ensure_furnace_off()
+    end
+
+    # Set display to 0.
+    db.Setting = 0
+end
+
+function set_furnace_values
+    # PID control for furnace temperature
+    var error_temp = min_temp - temp
+    integral_temp = integral_temp + error_temp
+    var derivative_temp = error_temp - prev_error_temp
+    prev_error_temp = error_temp
+
+    # Add KP_Temp + error_temp
+    float_val = Kp_temp * error_temp
+
+    # Ki_temp * integral_temp
+    float_val_2 = Ki_temp * integral_temp
+    float_val = float_val + float_val_2
+    
+    # Kd_temp * derivative_temp
+    float_val_2 = Kd_temp * derivative_temp
+    float_val = float_val + float_val_2
+
+    bool_val = float_val + current_input_setting
+
+
+    # Ensure the new input setting stays within acceptable range
+    if bool_val < 0
+        bool_val = 0
+    end
+
+    if bool_val > 99
+        bool_val = 99
+    end
+
+    
+    # # If the current temp is less then the min temp, add fuel!
+    # if current_temp < min_temp    
+    #     # If we are under desired temp, add more fuel. 
+    #     setting = setting + 1  
+    #     furnace.SettingInput = setting
+    # else
+    #     # Otherwise, slowly reduce fuel flow.
+    #     setting = setting - 1
+    #     furnace.SettingInput = setting
+    # end
+
+    db.Setting = -1
+
+    # Set Furnace Value - This line is broken.
+    if current_input_setting != bool_val
+        furnace.SettingInput = bool_val
+    end
+
+    db.Setting = setting
+    
+end
+
+function light_furnace
+    # If the furnace is completely empty- there will not be any pressure / temp.
+
+    if press == 0
+        # There is no gas in the furnace. Open the input valve
+        furnace.SettingInput = 5
+
+        # Close the output valve too.
+        furnace.SettingOutput = 0
+    end
+
+    # If the furnace is too cold, it must not be lit. Light it.
+    furnace.Activate = 1
+    db.Setting = -2
+end
+
+function check_overpressure
+    # Check if we are over pressure
+    if press > max_pressure
+        # Over pressure - Start opening the output valve.
+        furnace.SettingOutput = current_output_setting + 1
+    else
+        # Not over pressure. Start closing the output valve.
+        furnace.SettingOutput = current_output_setting - 1
+    end
+end

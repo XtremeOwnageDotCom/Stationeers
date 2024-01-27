@@ -1,0 +1,52 @@
+# Manages fuel production.
+
+# Will produce gas when storage pressure is below storage_min_pressure
+# Mixer will turn off when we hit storage_max_pressure
+define storage_min_pressure 25000   # How much gas to store.
+define storage_max_pressure 30000   # How much gas to store.
+
+
+define min_gas_pressure 5000            # This much oxygen and hydrogen pressure must be available, before turning on the mixer.
+
+alias gas_mixer d0
+alias gas_tank d1
+alias oxygen_tank d2
+alias hydrogen_tank d3
+
+alias oxygen_pressure r0                # Oxygen storage pressure.
+alias hydrogen_pressure r1              # Hydrogen storage pressure
+alias storage_pressure r2               # Amount of mixed fuel
+
+alias oxygen_good r10                   # Is there enough oxygen to mix more fuel?
+alias hydrogen_good r11                 # is there enough hydrogen to mix more fuel?
+alias storage_good r12                  # Do we need to mix more fuel?
+
+alias mixer_state r15
+main:
+    jal read_values
+    blt storage_pressure storage_min_pressure storage_low   # If storage_pressure < storage_min_pressure, go fill up the tank.
+    s d0 On 0                                   # Otherwise, turn the mixer off, and wait a while.
+    sleep 15 
+    j main
+
+storage_low:                # Storage is low. Filling storage.
+    yield                   # Zzzz
+    jal read_values         # Get Data
+    s d0 On mixer_state     # Turn the mixer on when we are low on gas, as long as pre-reqs are met.
+    blt storage_pressure storage_max_pressure storage_low  # Until the storage is full, keep repeating storage_low
+    # Storage is full. Turn mixer off, and wait for level to drop again.
+    s d0 On 0               # Turn mixer off.
+    j main                  # Continue to main loop.
+
+read_values:
+    l storage_pressure d1 Pressure
+    l oxygen_pressure d2 Pressure
+    l hydrogen_pressure d3 Pressure
+
+    sgt oxygen_good oxygen_pressure min_gas_pressure
+    sgt hydrogen_good hydrogen_pressure min_gas_pressure
+
+    and mixer_state oxygen_good hydrogen_good
+
+    s db Setting storage_pressure
+    j ra

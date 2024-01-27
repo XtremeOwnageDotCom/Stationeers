@@ -1,0 +1,81 @@
+define pipe_analyzer 435685051
+define gas_sensor -1252983604
+define gas_tank 1013514688
+define powered_vent_large -785498334
+define liquid_tank 608607718
+define liquid_heater -287495560
+define air_conditioner -2087593337
+define filtration -348054045
+define volume_pump_gas -321403609
+
+define kelvin_offset 273.15 
+define liquid_min_temp_c -10
+
+define max_storage_pressure 48000
+define min_storage_pressure 46000
+define min_filtration_pressure 40000
+
+alias input_storage_pressure r1
+alias filtration_input_pressure r2
+alias processed_pressure r3
+alias output_pressure r4
+alias room_pressure r5
+alias storage_overpressure r6
+
+alias scratch r12
+alias scratch_2 r13
+alias scratch_3 r14
+alias scratch_4 r15
+
+# Gas Flow
+# Input -> Processed -> Output
+main:   
+    yield                                        
+    jal populate_registers                       # Populate registers.
+    jal manage_liquid_temp                       # Keep liquid below freezing point.
+    jal toggle_input_fan                         # Manage the input fan.
+
+    beqzal storage_overpressure toggle_filtration   # If we are not overpressure, toggle filtration normally.
+    bnezal storage_overpressure overpressure_wait   # If we went overpressure, wait for pressure to come to normal.
+    j main
+
+
+populate_registers:   
+    lbn input_storage_pressure gas_tank HASH("Input") Pressure Average        
+    lbn processed_pressure gas_tank HASH("Processed") Pressure Average 
+    lbn room_pressure gas_sensor HASH("Room") Pressure Average 
+    lbn filtration_input_pressure pipe_analyzer HASH("Input") Pressure Minimum
+    j ra                                         # Return to the calling function
+
+manage_liquid_temp:                              # Turn liquid heaters on when temp is below a certain point.      
+    lb scratch_2 liquid_tank TotalMoles Minimum   # Get liquid tank contents              
+    lb scratch liquid_tank Temperature Minimum   # Get liquid tank temp.
+    sub scratch scratch kelvin_offset            # Convert temp from K to C.
+    slt scratch scratch liquid_min_temp_c        # If liquid is colder then min temp. store 1.
+    sgt scratch_2 scratch_2 0                    # Ensure there is actually something inside of the tank....
+    and scratch_3 scratch scratch_2              # Check both temp AND contents.
+    sb liquid_heater On scratch_3                  # Turn heaters on if temp < min temp
+    j ra
+
+toggle_input_fan:                                # The fan should run if both input_storage_pressure < 50,000Kpa AND room_pressure > 90Kpa
+    slt scratch_2 input_storage_pressure 50000           # Set bool for input_storage_pressure within bounds.
+    sgt scratch_3 room_pressure 90               # Set bool for room_pressure within bounds.
+    and scratch scratch_2 scratch_3              # Set final value if both previous conditions are true.
+    sb powered_vent_large On scratch             # Toggle vent if conditions are met.
+    j ra
+
+toggle_filtration:
+    sgt storage_overpressure processed_pressure max_storage_pressure    # Make sure we aren't overpressure.
+    seqz scratch_3 storage_overpressure          # Check processed_pressure < 50,000
+    sgt scratch_4 filtration_input_pressure min_filtration_pressure   # Check filtration input pressure. Higher pressure is needed to remove pollutants and NOS.
+    and scratch scratch_3 scratch_4              # Set final value if both previous conditions are true.
+
+    sbn air_conditioner HASH("Input") On scratch                # Toggle vent if conditions are met.
+    sb volume_pump_gas On scratch                # Toggle volume pumps. 
+    sb filtration On scratch                     # Toggle vent if conditions are met.
+    j ra
+
+overpressure_wait:  
+    # The goal here is to wait until the storage pressure drops below a threshold, to reengage filtration.
+    slt storage_overpressure processed_pressure min_storage_pressure # Check if storage pressure < min_storage
+    j ra

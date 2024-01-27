@@ -1,0 +1,34 @@
+define elevator_level -827912235
+define elevator_shaft 826144419
+
+alias speed_control d0
+alias lock_control d1
+
+alias current_speed r0
+alias locked r1
+
+
+alias scratch r13
+alias scratch_2 r14
+alias scratch_3 r15
+
+
+main:   
+    yield                                        
+    jal populate_registers                       # Populate registers.
+    jal update_elevator                       
+
+    
+    j main
+
+
+populate_registers:   
+    l r0 speed_control Setting
+
+    j ra                                         # Return to the calling function
+
+update_elevator:
+    sb elevator_level ElevatorSpeed current_speed
+    sb elevator_shaft ElevatorSpeed current_speed
+    sb elevator_level Lock locked
+    j ra

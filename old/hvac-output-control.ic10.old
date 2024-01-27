@@ -1,0 +1,85 @@
+define pipe_analyzer 435685051
+define turbo_pump 1310794736
+define gas_tank 1013514688
+
+define desired_output_kPa 1500
+
+# PID Loop variables
+define target_pressure 105
+define Kp_pressure 0.1  # Proportional gain for pressure
+define Ki_pressure 0.08  # Integral gain for pressure
+define Kd_pressure 0.01  # Derivative gain for pressure
+define sampling_time 0.1  # Set your desired sampling time (in seconds)
+
+alias integral_pressure r0
+alias prev_error_pressure r1
+
+alias pid_error_pressure r2
+alias prev_error r3
+alias integral r4
+alias derivative_pressure r5
+alias pid_output_pressure r6
+
+alias current_pressure r7
+alias current_pump_speed r8
+
+alias scratch r12
+alias scratch_2 r13
+alias scratch_3 r14
+alias scratch_4 r15
+
+move r0 0
+move r1 0
+# Gas Flow
+# Input -> Processed -> Output
+main:   
+    yield                                        
+    jal populate_registers                       # Populate registers.
+    jal set_pump_speed
+
+    j main
+
+
+populate_registers:   
+    lbn current_pressure pipe_analyzer HASH("Output") Pressure Average     
+    lbn current_pump_speed turbo_pump HASH("Output") Setting Average  
+    j ra                                         # Return to the calling function
+
+
+set_pump_speed:
+    # Calculate error (desired_value - current_value)
+    sub pid_error_pressure target_pressure current_pressure
+    
+    # Calculate integral (integral + error * dt)
+    mul scratch_2 pid_error_pressure sampling_time
+    add integral_pressure integral_pressure scratch_2
+    
+    # Calculate derivative (error - prev_error) / dt
+    sub derivative_pressure pid_error_pressure prev_error_pressure
+    div derivative_pressure derivative_pressure sampling_time
+    
+    # Calculate PID output (Kp_pressure * error + Ki_pressure * integral + Kd_pressure * derivative)
+    mul scratch_2 Kp_pressure pid_error_pressure
+    mul scratch_3 Ki_pressure integral_pressure
+    mul scratch_4 Kd_pressure derivative_pressure
+    add pid_output_pressure scratch_2 scratch_3
+    add pid_output_pressure pid_output_pressure scratch_4
+    
+    # Limit the output to a reasonable range (0 to 100)
+    slt scratch pid_output_pressure 0
+    sgt scratch_2 pid_output_pressure 100
+
+    max pid_output_pressure pid_output_pressure scratch
+    max pid_output_pressure pid_output_pressure scratch_2
+    
+    # Apply PID output to control the pump speed
+    sbn turbo_pump HASH("Output") Setting pid_output_pressure
+    
+    # Update previous error for the next iteration
+    move prev_error_pressure pid_error_pressure
+
+    # Set the pump's on status, if the target setting > 0
+    sgt scratch pid_output_pressure 1
+    sbn turbo_pump HASH("Output") On scratch
+
+    j ra

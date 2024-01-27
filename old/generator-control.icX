@@ -1,0 +1,76 @@
+use comments
+
+alias Housing db
+alias Battery d0
+alias GasGenerator d1
+alias CoalGenerator d2
+alias Display d3
+
+
+
+const lower_bound = 10
+const middle_bound = 20
+const upper_bound = 50
+
+var BATTERY_HASH = d0.PrefabHash
+var mode = 0
+var currentChargePct = 0
+
+# Main processing loop
+main:
+    getCharge()
+    calculateMode()
+    setGeneratorState()
+
+    # Set LED Value
+    Display.Setting = currentChargePct
+    yield
+j main
+
+function getCharge
+    # Get average ratio from batteries. Returns value of 0 - 1.
+    var output = d(BATTERY_HASH).Ratio(Average)
+    # Take the float, times 100 to give a current percentage.
+    currentChargePct = output * 100
+end
+
+function calculateMode
+    if currentChargePct < lower_bound
+        mode = 0
+    else
+        if currentChargePct < middle_bound
+            mode = 1
+        else
+            if currentChargePct < upper_bound
+                mode = 2
+            else
+                mode = 3
+            end
+        end
+    end
+    # Set housing's value to the current running mode.
+    Housing.Setting = mode
+end
+
+function setGeneratorState
+    # 0 to 10%
+    if mode == 0
+        CoalGenerator.On = 1
+        #GasGenerator.On = 1   
+    end
+    # 10 to 20%
+    if mode == 1
+        #CoalGenerator.On = 1
+        #GasGenerator.On = 1   
+    end
+    # 20 to 50%
+    if mode == 2
+        CoalGenerator.On = 0
+        #GasGenerator.On = 1   
+    end
+    # > 50%
+    if mode == 3
+        CoalGenerator.On = 0
+        GasGenerator.On = 0  
+    end
+end

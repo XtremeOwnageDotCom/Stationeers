@@ -1,0 +1,106 @@
+define target_hash 1310794736               # Turbo Pump
+define target_name HASH("Input")
+
+define source_hash 435685051                # Pipe Analyzer
+define source_name HASH("Input")
+
+define dial_hash 554524804                  # Dial
+define dial_name HASH("Input Pressure")
+
+define storage_tank_hash 1013514688         # Storage Tank
+define storage_tank_name HASH("Input")
+
+# PID Constants
+define Kp 0.01 #Aprox MaxOutput/SP
+define Ti 0
+define Td 0
+
+define TimeStep 1.0
+
+# Constraints
+define MinOutput 0
+define MaxOutput 100
+define FilterTicks 3
+define RegulatorMode -1                 # Direct = 1, Reverse = -1
+define setpoint_multiplier 1000           # If a device feeds the setpoint, the provided value will be multiplied by this.
+
+define min_storage_pressure 1000        # Pump turns off below this pressure
+define max_storage_pressure 5000        # Pump turns back on after hitting this pressure
+
+alias input_value r0
+alias output_value r1
+alias error r2
+alias prev_error r3
+alias iCalc r4
+alias dCalc r5
+
+alias setpoint r8
+alias TempValue r10
+
+alias storage_pressure r11
+alias storage_pressure_low r12
+
+alias scratch r15
+# Init Values
+move setpoint 0
+move iCalc 0
+
+Loop:
+    yield
+    jal populate_registers                      # Load registers
+    bnezal storage_pressure_low storage_underpressure_wait   # If we went underpressure, wait for pressure to come to normal.
+    jal storage_underpressure_check             # Check storage pressure.
+    Calculate:
+        sub error input_value setpoint
+        mul error error RegulatorMode
+    Proportional:
+        mul output_value Kp error
+    Integrator:                                 # Calculate the integral value.
+        beqz Ti Derivative
+        div TempValue error Ti
+        add iCalc iCalc TempValue
+        add output_value output_value iCalc
+    Derivative:                                 # Calculate the Derivative value.
+        sub dCalc error prev_error
+        div dCalc dCalc TimeStep
+        # mul dCalc dCalc Kp
+        mul dCalc dCalc Td
+        move prev_error error
+        add output_value output_value dCalc
+    Limits:                                     # Keeps output value within defined min / max values.
+        min iCalc MaxOutput iCalc
+        max iCalc MinOutput iCalc
+        min output_value MaxOutput output_value
+        max output_value MinOutput output_value
+    SetState:
+        s db Setting output_value
+        jal update_device
+    j Loop
+
+
+populate_registers:                             # Load data into registers.
+    lbn input_value source_hash source_name Pressure Maximum         # Load the current setting. Update this with your source sensor.
+    lbn setpoint dial_hash dial_name Setting Maximum
+    mul setpoint setpoint setpoint_multiplier   # Multiply setpoint by setpoint multiplier.
+    lbn storage_pressure storage_tank_hash storage_tank_name Pressure Minimum
+    j ra
+
+update_device:
+    sbn target_hash target_name Setting output_value              # Update the target device. Update this to compensate for your device.
+    sgt scratch output_value 0                 # If output value > 0, store 1
+    sbn target_hash target_name On scratch
+    j ra
+
+storage_underpressure_wait:
+    # The goal here is to wait until the storage pressure raises above a threshold, to reengage filtration.
+    slt storage_pressure_low storage_pressure max_storage_pressure # Check if storage pressure < min_storage
+    beq storage_pressure_low 1 Loop            # If we are still under pressure Wait, and try again later.
+    sbn target_hash target_name On 1           # Turn pump on. 
+    j ra
+
+storage_underpressure_check:                   # Check to make sure we have enough stored gasses.
+    # When storage_pressure_low = storage_pressure < min_storage_pressure
+    slt storage_pressure_low storage_pressure min_storage_pressure
+    beqz storage_pressure_low ra               # If storage pressure is not low, return to sender.
+    sbn target_hash target_name On 0           # Turn pump off.
+    j Loop                                     # Return to loop.  

@@ -1,0 +1,21 @@
+# Turns on active vents, when pressure exceeds threshold.
+
+define gas_generator 1165997963
+define active_vent -1129453144
+define kelvin_offset 273.15 
+
+define threshold_c 20       
+
+alias generator d0
+
+alias current_temp r0
+alias cooling_on r1
+main:
+    yield
+    l current_temp d0 Temperature   # Get current temp.
+    sub current_temp current_temp kelvin_offset #Convert K to C.
+
+    sgt cooling_on current_temp threshold_c
+
+    sb active_vent On cooling_on
+    j main

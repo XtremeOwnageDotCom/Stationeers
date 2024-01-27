@@ -1,0 +1,75 @@
+define hydroponics_device -1841632400
+define harvie 958056199
+define sorter -1009150565
+
+define state_empty -1
+define state_seeding 5
+define desired_seed_hash 1783004244             # Soybean seeds
+
+alias current_hash r1
+alias harvies_needing_seeds r2
+# Variables specific to each hash.
+alias current_plant_state r5
+
+alias scratch r13
+alias scratch_2 r14
+alias scratch_3 r15
+
+
+
+main:   
+    yield      
+    move harvies_needing_seeds 0                # Initialize the register of harvies without seeds.                                  
+    jal populate_stack                          # Populate stack with various hashes.
+
+    foreach_device:
+        pop current_hash
+
+        s db Setting current_hash
+        jal manage_planter
+        bgt sp 0 foreach_device                 # Interate through each device.
+
+    jal manage_sorter                           # Manage the output sorter.
+    sleep 1
+    j main
+
+
+populate_stack:                                 # Populate stack with various planting devices.
+    push HASH("1")
+    push HASH("2")
+    push HASH("3")
+    push HASH("4")
+    j ra
+
+manage_planter:
+    lbns current_plant_state hydroponics_device current_hash 0 Growth Maximum  # Get the current growth state for the current planter.
+
+    try_harvest:
+        seq scratch current_plant_state state_seeding       # If the current state is 5 (Seeding), we are ready to harvest.
+        sbn harvie current_hash Harvest scratch             # If the plant is seeding, harvest it.
+
+    try_plant:
+        seq scratch current_plant_state state_empty         # Determine if the planter is empty.
+        lbns scratch_2 harvie current_hash 0 Occupied Minimum   # Make sure harvie has a seed in its import slot.
+
+        seqz scratch_3 scratch_2
+        add harvies_needing_seeds harvies_needing_seeds scratch_3   # If this harvie is empty, increment the register for harvies needing seeds.
+
+        and scratch scratch scratch_2                       # Make sure the plant needs to be planted, and harvie has a seed to plant.
+        sbn harvie current_hash Plant scratch               # Tell harvie to plant a new one, if needed.
+
+    j ra
+
+manage_sorter:
+    sb sorter Mode 2                            # Set to "Logic" mode
+    lbs scratch sorter 0 Occupied               # Determine if the sorter has items queued.
+    beq scratch 1 sorter_items                  # If there are items, branch to sorter_items
+
+    sb sorter Output -1                     # Set to no output.     
+    j ra     
+
+    sorter_items:
+    lbs scratch sorter 0 PrefabHash             # Get the prefab hash of the item inside of the sorter.
+    seq scratch_2 scratch desired_seed_hash     # If the import item is equal to the stored hash, store 1.
+    sb sorter Output scratch_2                  # Set output mode. 0 = To fridge. 1 = To Harvies
+    j ra

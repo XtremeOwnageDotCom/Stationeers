@@ -1,0 +1,90 @@
+define filtration -348054045
+define wall_heater 24258244
+define volume_pump -321403609
+define active_vent -1129453144
+define occupancy_sensor 322782515
+define wall_light -1860064656
+
+define kelvin_offset 273.15 
+define storage_pressure 40000
+define ideal_room_pressure 75
+define room_pressure_too_high 100
+
+define input_vent HASH("Input")                             # This is the input vent for filtration and drain.
+define c02_vent HASH("Fill")                                # This vent fills the room with atmosphere
+define room_light HASH("Room")                              # This is the room atmosphere sensor
+define drain_pump HASH("Drain")                             # This pump removes air from this room
+define waste_pump HASH("Waste")                             # This pump keeps a suction on the waste line, to make filtration work better.
+
+alias room_sensor d0
+alias room_pressure r1
+alias waste_pressure r2
+alias room_temperature r3
+alias co2_storage_valve d1
+
+alias room_pressure_high r5
+
+alias scratch r13
+alias scratch_2 r14
+alias scratch_3 r15
+
+setup:
+    sbn active_vent input_vent Mode 1                       # Suck gasses IN.
+    sbn active_vent input_vent PressureInternal 48000       # Keep 40 Mpa in the input pipe.
+    sbn active_vent c02_vent Mode 0                         # Push gasses OUT
+    sbn active_vent c02_vent PressureExternal 75            # Only fill the room with 75 kPa.
+    sbn volume_pump drain_pump Setting 10               
+    sbn volume_pump waste_pump Setting 10
+
+main:   
+    yield                                        
+    jal populate_registers                       # Populate registers.
+    jal manage_filtration                       
+    sbn volume_pump HASH("Drain") On room_pressure_high # If the room pressure is too high, turn on the drain pump.
+    jal manage_heater
+    jal manage_lights
+    jal manage_waste_pump
+
+    s db Setting storage_pressure
+    j main
+
+
+populate_registers:   
+    l waste_pressure db PressureOutput2      
+    l room_pressure room_sensor Pressure
+    l room_temperature room_sensor Temperature
+    sub room_temperature room_temperature kelvin_offset #Convert temp to C.
+    sgt room_pressure_high room_pressure room_pressure_too_high
+    j ra                                         # Return to the calling function
+
+manage_filtration:                              # We want to run the filtration, until we have 40 mPa output pressure.
+    l scratch_2 room_sensor RatioOxygen
+    sgt scratch scratch_2 .10                   # Enable if oxygen pct > 10
+
+    l scratch_2 room_sensor RatioPollutant          
+    sgt scratch_2 scratch_2 0                   # Enable if there are ANY Pollutants               
+    add scratch scratch scratch_2
+
+    l scratch_2 room_sensor RatioNitrousOxide          
+    sgt scratch_2 scratch_2 0                   # Enable if there are ANY N20               
+    add scratch scratch scratch_2
+
+    sgt scratch scratch 0                       # If any of the above conditions are met, run the pump.
+
+    s db Mode scratch                           # Mode, Active = 1, Idle = 0
+    j ra
+
+manage_waste_pump:                              # Keep the waste line empty.
+    sgt scratch waste_pressure 0
+    sbn volume_pump waste_pump On scratch   
+    j ra
+
+manage_heater:
+    slt scratch room_temperature 16             # If the room is less then 16 degrees, turn on the heater.
+    sb wall_heater On scratch
+    j ra
+
+manage_lights:
+    lb scratch occupancy_sensor Activate Maximum    # Determine if anyone is in the room
+    sbn wall_light room_light On scratch
+    j ra
