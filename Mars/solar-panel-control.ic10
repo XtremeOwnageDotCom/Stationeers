@@ -1,4 +1,5 @@
 define solar_panel_heavy -1545574413
+define solar_panel -2045627372
 alias daylight_sensor d0
 
 define vertical_correction_factor 90
@@ -26,6 +27,8 @@ main:
     # Set north facing panels.
     sb solar_panel_heavy Vertical vertical              # Set panel vertical
     sb solar_panel_heavy Horizontal horizontal          # Set panel horizontal
+    sb solar_panel Vertical vertical              # Set panel vertical
+    sb solar_panel Horizontal horizontal          # Set panel horizontal
 
     jal set_display_value                                           # Set the debug output
     j main
@@ -49,6 +52,6 @@ rollover_value:
     j ra                                                            # Return to sender.
 
 set_display_value:
-    lb current_charge solar_panel_heavy Charge Sum
+    lb current_charge solar_panel Charge Sum
     s db Setting current_charge
     j ra
