@@ -1,0 +1,70 @@
+define active_vent -1129453144
+define gas_sensor -1252983604
+define small_display -815193061
+define evap_chamber -1429782576
+
+define kelvin_offset 273.15 
+define target_temp 20
+define max_pressure 40000
+
+alias input_vent d0
+alias filtration_co2_in d1
+alias filtration_o2_out d2
+
+alias pressure_consumers r0
+alias room_pressure r3
+alias room_temp r4
+alias room_o2_level r5
+alias scratch r6
+
+# Init
+sbn active_vent HASH("Input") Mode 1            # Set to inwards.
+sbn active_vent HASH("Input") PressureInternal max_pressure
+sbn active_vent HASH("Input") PressureExternal 0
+main:   
+    yield                                        
+    jal load_data                               # Load input data
+    
+    jal check_room_pressure
+    jal check_room_temp
+    jal check_o2_level
+
+    jal manage_vent
+    
+    sb small_display Setting room_pressure
+    s db Setting room_o2_level
+    yield
+    j main
+
+check_room_pressure:
+    slt scratch room_pressure 100   # scatch = room_pressure < 100
+    add pressure_consumers scratch pressure_consumers    # pressure_consumers += scatch
+    s filtration_co2_in On scratch                  # If pressure < 100, turn on the carbon seperator.
+    j ra
+
+check_room_temp:
+    sgt scratch room_temp target_temp
+    add pressure_consumers scratch pressure_consumers    # pressure_consumers += scatch
+    sb evap_chamber On scratch  
+    j ra
+
+check_o2_level:
+    sgt scratch room_o2_level 0.10
+    add pressure_consumers scratch pressure_consumers    # pressure_consumers += scatch
+    s filtration_o2_out On scratch                  # If pressure < 100, turn on the carbon seperator.
+    j ra
+
+manage_vent:
+    sgtz scratch pressure_consumers 
+    sbn active_vent HASH("Input") On scratch
+    j ra
+
+load_data:
+    move pressure_consumers 0                                   # Initialize value.
+    lbn room_pressure gas_sensor HASH("Room") Pressure Average
+    lbn room_temp gas_sensor HASH("Room") Temperature Average
+    sub room_temp room_temp kelvin_offset
+    lbn room_o2_level gas_sensor HASH("Room") RatioOxygen Average
+    j ra
+
+

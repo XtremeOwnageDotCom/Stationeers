@@ -1,0 +1,63 @@
+define DesiredPressure 40000
+define kelvin_offset 273.15 
+
+define active_vent -1129453144
+define gas_sensor -1252983604
+define small_insulated_tank 272136332
+define outside_vent_hash HASH("Outside")
+
+# Aliases
+alias air_exchanger d3
+
+alias outside_temp r0
+alias waste_temp r1
+
+alias should_fill r10
+alias should_empty r11
+alias vent_on r12
+alias vent_mode r13
+
+alias scratch_3 r13
+alias scratch_2 r14
+alias scratch r15
+
+
+Loop:
+    yield
+   
+    jal PopulateRegisters               # Manage input air pressure.
+    jal ManageAirExchanger              # Manage air exchanger
+    #jal ManageVent                     # Disabled for now.
+
+
+    s db Setting outside_temp
+    yield                         # Inward
+    j Loop
+
+PopulateRegisters:  
+    lbn outside_temp gas_sensor HASH("Outside") Temperature Average
+    sub outside_temp outside_temp kelvin_offset             # Convert temp from K to C. 
+    lbn waste_temp small_insulated_tank HASH("Outside") Temperature Average
+    sub waste_temp waste_temp kelvin_offset                 # Convert temp from K to C. 
+
+    j ra
+
+ManageAirExchanger:             # If outside temp < "waste" temp, turn on the air exchanger.
+    slt scratch waste_temp outside_temp
+    s d3 On scratch
+    j ra
+
+ManageVent:
+    slt should_fill outside_temp 140
+
+    # IF Tank > 150c AND, OUTSIDE TEMP > 500 THEN VENT
+    sgt scratch waste_temp 150
+    sgt scratch_2 outside_temp 500
+    and should_empty scratch scratch_2
+
+    or vent_on should_fill should_empty
+
+    seq vent_mode should_fill 1
+    sbn active_vent outside_vent_hash On vent_on
+    sbn active_vent outside_vent_hash Mode vent_mode
+    j ra
